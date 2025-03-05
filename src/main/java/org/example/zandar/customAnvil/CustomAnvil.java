@@ -9,7 +9,8 @@ public final class CustomAnvil extends JavaPlugin {
     @Override
     public void onEnable() {
         // Plugin startup logic
-        Bukkit.getPluginManager().registerEvents(new AnvilListener(), this);
+        Bukkit.getPluginManager().registerEvents(new AnvilListener(this), this);
+        saveDefaultConfig();
     }
 
     @Override
