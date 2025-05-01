@@ -1,4 +1,0 @@
-name: CustomAnvil
-version: '1.0-SNAPSHOT'
-main: org.example.zandar.customAnvil.CustomAnvil
-api-version: '1.21'
