@@ -1,0 +1,13 @@
+name: CustomAnvil
+version: '1.21.0'
+main: org.example.zandar.customAnvil.CustomAnvil
+api-version: '1.21'
+commands:
+  customanvil:
+    aliases: [ca]
+    permission: customanvil.reload
+    usage: /customanvil reload
+
+permissions:
+  customanvil.reload:
+    default: op
