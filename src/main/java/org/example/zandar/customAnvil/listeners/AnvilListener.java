@@ -13,6 +13,7 @@ import org.bukkit.inventory.AnvilInventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.Repairable;
 import org.example.zandar.customAnvil.CustomAnvil;
 import org.example.zandar.customAnvil.utils.MessageUtils;
 
@@ -77,66 +78,103 @@ public class AnvilListener implements Listener {
     }
 
     @EventHandler
-    public void customAnvil(PrepareAnvilEvent event) {
-        AnvilInventory anvil = event.getInventory();
-        ItemStack firstItem = anvil.getFirstItem();
-        ItemStack secondItem = anvil.getSecondItem();
-        ItemStack resultItem = event.getResult();
-        if (secondItem == null) {
+    public void customAnvil(PrepareAnvilEvent e) {
+        AnvilInventory inv = e.getInventory();
+        ItemStack first = inv.getFirstItem();
+        ItemStack second = inv.getSecondItem();
+        ItemStack result = e.getResult();
+        if (second == null) {
             int cost = plugin.getConfig().getInt("rename-cost", 1);
-            event.getView().setRepairCost(cost);
+            e.getView().setRepairCost(cost);
             return;
         }
-        if (firstItem != null && enchants.containsKey(firstItem.getType())) {
-            List<Enchantment> allowed = enchants.get(firstItem.getType());
-            if (secondItem.getType() == Material.ENCHANTED_BOOK) {
-                EnchantmentStorageMeta bookMeta = (EnchantmentStorageMeta) secondItem.getItemMeta();
+        if (first != null && first.getType() == Material.ENCHANTED_BOOK && second.getType() == Material.ENCHANTED_BOOK) {
+            return;
+        }
+        if (first != null && enchants.containsKey(first.getType())) {
+            List<Enchantment> allowed = enchants.get(first.getType());
+            if (second.getType() == Material.ENCHANTED_BOOK) {
+                EnchantmentStorageMeta bookMeta = (EnchantmentStorageMeta) second.getItemMeta();
                 if (bookMeta == null) {
                     return;
                 }
-                ItemStack newResult = firstItem.clone();
-                ItemMeta resultMeta = newResult.getItemMeta();
-                if (resultMeta == null) {
+                ItemStack newResult = first.clone();
+                ItemMeta meta = newResult.getItemMeta();
+                if (meta == null) {
                     return;
                 }
-                for (Map.Entry<Enchantment, Integer> entry : firstItem.getEnchantments().entrySet()) {
-                    resultMeta.addEnchant(entry.getKey(), entry.getValue(), true);
+                int targetRepairCost = 0;
+                if (meta instanceof Repairable repairable) {
+                    if (repairable.hasRepairCost()) {
+                        targetRepairCost = repairable.getRepairCost();
+                    }
                 }
-                boolean applied = false;
+                int sacrificeRepairCost = 0;
+                if (bookMeta instanceof Repairable repairable) {
+                    if (repairable.hasRepairCost()) {
+                        sacrificeRepairCost = repairable.getRepairCost();
+                    }
+                }
+                for (Map.Entry<Enchantment, Integer> entry : first.getEnchantments().entrySet()) {
+                    meta.addEnchant(entry.getKey(), entry.getValue(), true);
+                }
+                int enchantCost = 0;
+                int newEnchants = 0;
                 for (Map.Entry<Enchantment, Integer> entry : bookMeta.getStoredEnchants().entrySet()) {
                     Enchantment enchant = entry.getKey();
-                    int level = entry.getValue();
+                    int lvl = entry.getValue();
                     if (allowed.contains(enchant)) {
-                        resultMeta.addEnchant(enchant, level, true);
-                        applied = true;
+                        if (!meta.hasEnchant(enchant)) {
+                            meta.addEnchant(enchant, lvl, true);
+                            enchantCost += lvl;
+                            newEnchants++;
+                        } else {
+                            int currentLvl = meta.getEnchantLevel(enchant);
+                            if (lvl > currentLvl) {
+                                meta.addEnchant(enchant, lvl, true);
+                                enchantCost += lvl;
+                                newEnchants++;
+                            }
+                        }
                     }
                 }
-                if (applied) {
-                    if (resultItem != null && resultItem.hasItemMeta() && 
-                        resultItem.getItemMeta().hasDisplayName()) {
-                        resultMeta.setDisplayName(resultItem.getItemMeta().getDisplayName());
+                int renameCost = 0;
+                if (result != null && result.hasItemMeta() && result.getItemMeta().hasDisplayName()) {
+                    if (!first.hasItemMeta() || !first.getItemMeta().hasDisplayName() ||
+                            !first.getItemMeta().getDisplayName().equals(result.getItemMeta().getDisplayName())) {
+                        renameCost = plugin.getConfig().getInt("rename-cost", 1);
                     }
-                    newResult.setItemMeta(resultMeta);
-                    event.setResult(newResult);
-                    int baseCost = 1;
-                    int enchantCost = bookMeta.getStoredEnchants().size() * 2;
-                    event.getView().setRepairCost(baseCost + enchantCost);
+                }
+                if (newEnchants > 0) {
+                    if (meta instanceof Repairable repairable) {
+                        int newRepairCost = (targetRepairCost * 2) + 1;
+                        repairable.setRepairCost(newRepairCost);
+                    }
+                    if (result != null && result.hasItemMeta() && result.getItemMeta().hasDisplayName()) {
+                        meta.setDisplayName(result.getItemMeta().getDisplayName());
+                    }
+                    newResult.setItemMeta(meta);
+                    e.setResult(newResult);
+                    int totalCost = enchantCost + targetRepairCost + sacrificeRepairCost + renameCost;
+                    e.getView().setRepairCost(totalCost);
                 } else {
-                    event.setResult(null);
+                    e.setResult(null);
                 }
             } else {
-                event.setResult(null);
+                e.setResult(null);
             }
-        }
-        else if (firstItem != null && secondItem.getType() == Material.ENCHANTED_BOOK && resultItem != null) {
-            EnchantmentStorageMeta bookMeta = (EnchantmentStorageMeta) secondItem.getItemMeta();
+        } else if (first != null && second.getType() == Material.ENCHANTED_BOOK && result != null) {
+            EnchantmentStorageMeta bookMeta = (EnchantmentStorageMeta) second.getItemMeta();
             if (bookMeta == null) {
+                return;
+            }
+            if (first.getType() == Material.ENCHANTED_BOOK) {
                 return;
             }
             for (Map.Entry<Enchantment, Integer> entry : bookMeta.getStoredEnchants().entrySet()) {
                 Enchantment enchant = entry.getKey();
-                if (!enchant.canEnchantItem(firstItem)) {
-                    event.setResult(null);
+                if (!enchant.canEnchantItem(first)) {
+                    e.setResult(null);
                     return;
                 }
             }
@@ -144,12 +182,12 @@ public class AnvilListener implements Listener {
     }
 
     @EventHandler
-    public void disableDamage(AnvilDamagedEvent event) {
-        AnvilInventory anvilInventory = event.getInventory();
-        ItemStack secondSlotItem = anvilInventory.getSecondItem();
-        if (secondSlotItem == null) {
+    public void disableDamage(AnvilDamagedEvent e) {
+        AnvilInventory inv = e.getInventory();
+        ItemStack second = inv.getSecondItem();
+        if (second == null) {
             boolean anvilBreak = plugin.getConfig().getBoolean("disable-anvil-damage", true);
-            event.setCancelled(anvilBreak);
+            e.setCancelled(anvilBreak);
         }
     }
 }
